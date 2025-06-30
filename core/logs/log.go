@@ -68,6 +68,7 @@ const (
 	AdapterJianLiao  = "jianliao"
 	AdapterSlack     = "slack"
 	AdapterAliLS     = "alils"
+	AdapterAliLS2    = "alils2"
 )
 
 // Legacy log level constants to ensure backwards compatibility.

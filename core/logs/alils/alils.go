@@ -30,6 +30,7 @@ type Config struct {
 	Level     int      `json:"level"`
 	FlushWhen int      `json:"flush_when"`
 	Formatter string   `json:"formatter"`
+	UseMsgKey string   `json:"use_msg_key"`
 }
 
 // aliLSWriter implements LoggerInterface.
@@ -125,6 +126,18 @@ func (c *aliLSWriter) SetFormatter(f logs.LogFormatter) {
 	c.formatter = f
 }
 
+func handleValueToString(v interface{}) *string {
+	switch val := v.(type) {
+	case string:
+		return proto.String(val)
+	case fmt.Stringer:
+		// 检查是否实现了 String() 方法
+		return proto.String(val.String())
+	default:
+		return proto.String(fmt.Sprintf("%v", v))
+	}
+}
+
 // WriteMsg writes a message in connection.
 // If connection is down, try to re-connect.
 func (c *aliLSWriter) WriteMsg(lm *logs.LogMsg) error {
@@ -154,17 +167,32 @@ func (c *aliLSWriter) WriteMsg(lm *logs.LogMsg) error {
 	}
 
 	content = c.formatter.Format(lm)
+	var logContents []*LogContent
 
-	c1 := &LogContent{
-		Key:   proto.String("msg"),
-		Value: proto.String(content),
+	if c.UseMsgKey != "1" {
+		contentLogMap := make(map[string]interface{})
+		err := json.Unmarshal([]byte(content), &contentLogMap)
+		if err != nil {
+			return fmt.Errorf("json.Unmarshal failed: %v", err)
+		}
+
+		for key, value := range contentLogMap {
+			// value 转 string
+			logContents = append(logContents, &LogContent{
+				Key:   proto.String(key),
+				Value: handleValueToString(value),
+			})
+		}
+	} else {
+		logContents = append(logContents, &LogContent{
+			Key:   proto.String("msg"),
+			Value: proto.String(content),
+		})
 	}
 
 	l := &Log{
-		Time: proto.Uint32(uint32(lm.When.Unix())),
-		Contents: []*LogContent{
-			c1,
-		},
+		Time:     proto.Uint32(uint32(lm.When.Unix())),
+		Contents: logContents,
 	}
 
 	c.lock.Lock()
